@@ -1,6 +1,6 @@
 {
   "common": {
-    "appTitle": "Hiddify",
+    "appTitle": "senatorm vpn",
     "start": "Başlat",
     "version": "Sürüm",
     "ok": "Tamam",
@@ -98,7 +98,7 @@
   "intro": {
     "banner": "Sınırsız bir internet için ihtiyacınız olan her şey",
     "termsAndPolicyCaution(rich)": "Devam ederek ${tap(@:pages.about.termsAndConditions)} kabul etmiş olursunuz",
-    "info(rich)": "Hiddify tarafından ❤️ ile yapıldı. ${tap_source(Açık kaynak)} ve ${tap_license(Lisans)}"
+    "info(rich)": "An open-source, non-commercial fork of Hiddify. ${tap_source(Açık kaynak)} ve ${tap_license(Lisans)}"
   },
   "pages": {
     "home": {
