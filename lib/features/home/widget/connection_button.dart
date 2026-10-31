@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -7,15 +6,11 @@ import 'package:gap/gap.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
-import 'package:hiddify/core/theme/theme_extensions.dart';
-import 'package:hiddify/core/widget/animated_text.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
-import 'package:hiddify/features/home/widget/eclipse_button_painter.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/stats/notifier/stats_notifier.dart';
-import 'package:hiddify/gen/assets.gen.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// What the button shows, one value per look.
@@ -51,9 +46,6 @@ class ConnectionButton extends HookConsumerWidget {
     final status = ref.watch(connectionNotifierProvider);
     final look = _held(_lookOf(status));
 
-    // What a tap does follows the core alone, and the core can be stopped whatever it is doing: a
-    // tunnel that is up, a start in progress, and a hot reload all turn off at once, and the core
-    // cancels what it was busy with.
     final onTap = switch (status) {
       AsyncData(value: Disconnected()) || AsyncError() => () => _connect(ref),
       AsyncData(value: Connected() || Waiting() || NoAvailableProxies() || Connecting() || HotReloading()) =>
@@ -66,12 +58,9 @@ class ConnectionButton extends HookConsumerWidget {
       AsyncValue(valueOrNull: Disconnected(connectionFailure: final failure?)) => failure,
       _ => null,
     };
-    // the speeds the button's light follows while connected
     final stats = ref.watch(statsNotifierProvider).valueOrNull;
 
-    const buttonTheme = ConnectionButtonTheme.light;
-    final today = DateTime.now();
-    return _ConnectionButton(
+    return _PowerButton(
       look: look,
       onTap: onTap,
       onErrorDetails: failure == null
@@ -92,19 +81,6 @@ class ConnectionButton extends HookConsumerWidget {
         _Look.failed => t.connection.failed,
       },
       hint: look == _Look.failed ? t.connection.tapToRetry : null,
-      buttonColor: switch (look) {
-        _Look.connected => buttonTheme.connectedColor!,
-        _Look.noProxies => const Color.fromARGB(255, 185, 176, 103),
-        _Look.failed => Colors.red,
-        // the logo's own blue while the connection is on its way
-        _Look.connecting || _Look.waiting || _Look.hotReloading || _Look.disconnecting => const Color(0xFF455FE9),
-        _ => buttonTheme.idleColor!,
-      },
-      image: switch (look) {
-        _Look.connected || _Look.noProxies || _Look.hotReloading => Assets.images.connectNorouz,
-        _ => Assets.images.disconnectNorouz,
-      },
-      useImage: today.day >= 19 && today.day <= 23 && today.month == 3,
     );
   }
 
@@ -161,8 +137,21 @@ class ConnectionButton extends HookConsumerWidget {
   }
 }
 
-class _ConnectionButton extends HookWidget {
-  const _ConnectionButton({
+
+String _speed(int bytesPerSecond) {
+  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+  var v = bytesPerSecond.toDouble();
+  var u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u++;
+  }
+  return '${v.toStringAsFixed(u == 0 ? 0 : 1)} ${units[u]}';
+}
+
+/// senatorm vpn's connect control: a plain ring when idle, a solid disc when connected.
+class _PowerButton extends StatelessWidget {
+  const _PowerButton({
     required this.look,
     required this.onTap,
     required this.onErrorDetails,
@@ -171,105 +160,42 @@ class _ConnectionButton extends HookWidget {
     required this.upload,
     required this.label,
     required this.hint,
-    required this.buttonColor,
-    required this.image,
-    required this.useImage,
   });
 
   final _Look look;
   final VoidCallback? onTap;
-
-  /// Shows what went wrong; null when nothing did.
   final VoidCallback? onErrorDetails;
   final String errorDetailsLabel;
-
-  /// Bytes a second.
   final int download;
   final int upload;
   final String label;
   final String? hint;
-  final Color buttonColor;
-  final AssetGenImage image;
-  final bool useImage;
 
-  static const _size = 148.0;
-
-  /// Room round the button for its light.
-  static const _glow = 110.0;
-
-  EclipseLook get _eclipseLook => switch (look) {
-    _Look.loading || _Look.disconnected => EclipseLook.idle,
-    _Look.connecting => EclipseLook.starting,
-    _Look.disconnecting => EclipseLook.stopping,
-    _Look.waiting || _Look.hotReloading => EclipseLook.waiting,
-    _Look.connected || _Look.noProxies => EclipseLook.connected,
-    _Look.failed => EclipseLook.error,
-  };
+  static const _outer = 196.0;
+  static const _inner = 164.0;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final still = MediaQuery.disableAnimationsOf(context);
-    final clock = useMemoized(() => Stopwatch()..start());
-    double now() => clock.elapsedMicroseconds / 1e6;
-
-    // when the look last changed, and from what
-    final eclipseLook = _eclipseLook;
-    final change = useRef((
-      look: eclipseLook,
-      previous: eclipseLook,
-      at: -10.0,
-      color: buttonColor,
-      previousColor: buttonColor,
-    ));
-    final previousLook = usePrevious(look);
-    // when the button last stopped showing connected
-    final leftConnected = useRef(-10.0);
-    if (change.value.look != eclipseLook || change.value.color != buttonColor) {
-      final last = change.value;
-      if (last.look == EclipseLook.connected && eclipseLook != EclipseLook.connected) leftConnected.value = now();
-      final eased = Color.lerp(last.previousColor, last.color, ((now() - last.at) / .45).clamp(0.0, 1.0))!;
-      // the app opening on a tunnel that is already up, or connected coming back
-      // after a moment away, skips the connect animation instead of replaying it
-      final skip =
-          previousLook == _Look.loading || (eclipseLook == EclipseLook.connected && now() - leftConnected.value < 2);
-      change.value = (
-        look: eclipseLook,
-        previous: last.look,
-        at: skip ? now() - 10 : now(),
-        color: buttonColor,
-        previousColor: eased,
-      );
-    }
-
-    // the speeds arrive once a second; the light follows them smoothly
-    final target = useRef(const EclipseTraffic());
-    target.value = EclipseTraffic(down: EclipseTraffic.level(download), up: EclipseTraffic.level(upload));
-    final traffic = useRef(const EclipseTraffic());
-
-    // Timer (not useSingleTickerProvider): that hook only allows one createTicker
-    // for the State's life, so look/still changes crashed after disconnect→connect.
-    final time = useValueNotifier(0.0);
-    useEffect(() {
-      if (still) return null;
-      var last = now();
-      final timer = Timer.periodic(const Duration(milliseconds: 33), (_) {
-        final at = now();
-        // the light rises with the traffic in about a second, and fades more slowly, so the
-        // stats reloading for a moment (coming back from the background) barely dims it
-        double follow(double from, double to) =>
-            from + (to - from) * (1 - math.exp(-(at - last) / (to > from ? .8 : 2.5)));
-        final t = traffic.value;
-        traffic.value = EclipseTraffic(down: follow(t.down, target.value.down), up: follow(t.up, target.value.up));
-        last = at;
-        final settled = change.value.look == EclipseLook.idle && at - change.value.at > 1;
-        if (!settled) time.value = at;
-      });
-      return timer.cancel;
-    }, [still]);
+    final scheme = theme.colorScheme;
+    final busy = look == _Look.connecting ||
+        look == _Look.waiting ||
+        look == _Look.hotReloading ||
+        look == _Look.disconnecting ||
+        look == _Look.loading;
+    final on = look == _Look.connected || look == _Look.noProxies;
+    final failed = look == _Look.failed;
+    final fill = on ? scheme.primary : Colors.transparent;
+    final fg = on ? scheme.onPrimary : (failed ? scheme.error : scheme.onSurface);
+    final ring = failed ? scheme.error : scheme.onSurface;
+    final icon = failed
+        ? Icons.refresh_rounded
+        : look == _Look.noProxies
+            ? Icons.warning_amber_rounded
+            : Icons.power_settings_new_rounded;
 
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Semantics(
           button: true,
@@ -277,86 +203,81 @@ class _ConnectionButton extends HookWidget {
           label: label,
           hint: hint,
           child: SizedBox.square(
-            dimension: _size,
+            dimension: _outer,
             child: Stack(
-              fit: StackFit.expand,
-              clipBehavior: Clip.none,
+              alignment: Alignment.center,
               children: [
-                Positioned(
-                  left: -_glow,
-                  top: -_glow,
-                  right: -_glow,
-                  bottom: -_glow,
-                  child: IgnorePointer(
-                    child: RepaintBoundary(
-                      child: ValueListenableBuilder(
-                        valueListenable: time,
-                        builder: (context, t, _) {
-                          final c = change.value;
-                          return CustomPaint(
-                            isComplex: true,
-                            willChange: true,
-                            painter: EclipseButtonPainter(
-                              frame: EclipseFrame(
-                                look: c.look,
-                                previous: c.previous,
-                                since: still ? 10 : now() - c.at,
-                                time: still ? 0 : now(),
-                                color: c.color,
-                                previousColor: c.previousColor,
-                              ),
-                              radius: _size / 2,
-                              traffic: traffic.value,
-                              dark: theme.brightness == Brightness.dark,
-                              drawLogo: !useImage,
-                              logoOpacity: look == _Look.loading ? .38 : 1,
-                            ),
-                          );
-                        },
-                      ),
+                Container(
+                  width: _outer,
+                  height: _outer,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: scheme.outlineVariant, width: 1.5),
+                  ),
+                ),
+                if (busy)
+                  SizedBox.square(
+                    dimension: _outer,
+                    child: CircularProgressIndicator(strokeWidth: 3, color: scheme.onSurface),
+                  ),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutCubic,
+                  width: _inner,
+                  height: _inner,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: fill,
+                    border: Border.all(color: ring, width: on ? 0 : 3),
+                  ),
+                  child: Material(
+                    key: const ValueKey("home_connection_button"),
+                    color: Colors.transparent,
+                    shape: const CircleBorder(),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: onTap,
+                      child: Center(child: Icon(icon, size: 64, color: fg)),
                     ),
                   ),
                 ),
-                Material(
-                  key: const ValueKey("home_connection_button"),
-                  shape: const CircleBorder(),
-                  color: Colors.transparent,
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    focusColor: Colors.grey,
-                    onTap: onTap,
-                    child: useImage ? Padding(padding: const EdgeInsets.all(36), child: image.image()) : null,
-                  ),
-                ),
-                // the error badge opens what went wrong
-                if (look == _Look.failed && onErrorDetails != null)
-                  Positioned.fromRect(
-                    rect: EclipseButtonPainter.errorBadgeRect(const Offset(_size / 2, _size / 2), _size / 2).inflate(8),
-                    child: Semantics(
-                      button: true,
-                      label: errorDetailsLabel,
-                      child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: onErrorDetails),
-                    ),
-                  ),
               ],
             ),
           ),
         ),
-        const Gap(24),
+        const Gap(28),
         ExcludeSemantics(
-          child: Column(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: Text(
+              label,
+              key: ValueKey(label),
+              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+        if (hint != null) ...[
+          const Gap(4),
+          Text(hint!, style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+        ],
+        if (failed && onErrorDetails != null)
+          TextButton(onPressed: onErrorDetails, child: Text(errorDetailsLabel)),
+        const Gap(12),
+        AnimatedOpacity(
+          duration: const Duration(milliseconds: 250),
+          opacity: on ? 1 : 0,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            textDirection: TextDirection.ltr,
             children: [
-              AnimatedText(label, style: theme.textTheme.titleMedium),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                child: hint == null
-                    ? const SizedBox.shrink()
-                    : Text(
-                        hint!,
-                        key: ValueKey(hint),
-                        style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                      ),
-              ),
+              Icon(Icons.arrow_downward_rounded, size: 18, color: scheme.onSurfaceVariant),
+              const Gap(4),
+              Text(_speed(download), style: theme.textTheme.bodyMedium),
+              const Gap(20),
+              Icon(Icons.arrow_upward_rounded, size: 18, color: scheme.onSurfaceVariant),
+              const Gap(4),
+              Text(_speed(upload), style: theme.textTheme.bodyMedium),
             ],
           ),
         ),
