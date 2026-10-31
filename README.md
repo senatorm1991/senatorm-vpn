@@ -1,3 +1,22 @@
+# senatorm vpn
+
+**senatorm vpn** is an Android-focused, open-source fork of [Hiddify](https://github.com/hiddify/hiddify-app), built on the sing-box core.
+It aims to provide modern censorship-circumvention protocols (VLESS/Reality, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, WireGuard, ShadowTLS), automatic config collection and testing, and DNS / DoH settings tuned for Iran.
+
+## Attribution and license
+
+- This project is a fork of [hiddify/hiddify-app](https://github.com/hiddify/hiddify-app). Full credit goes to the Hiddify team and contributors.
+- It is distributed under the original license terms: see [LICENSE.md](LICENSE.md) (GPLv3 with additional conditions, CC BY-NC-SA 4.0 non-commercial / share-alike). The original license is also linked from the upstream repository.
+- Source code stays public on GitHub, and releases are built with GitHub Actions.
+
+## Changes from upstream
+
+- App name changed to "senatorm vpn", Android application id changed to `com.senatorm.vpn`
+- Update links point to this repository
+- More changes (config collector/tester, DoH defaults, UI) will be listed here as they land
+
+---
+
 <div dir="ltr" align=center>
     
 [**![Lang_farsi](https://user-images.githubusercontent.com/125398461/234186932-52f1fa82-52c6-417f-8b37-08fe9250a55f.png) فارسی**](README_fa.md) / [**Русский 🇷🇺**](README_ru.md) / [**简体中文 🇨🇳**](README_cn.md) / [**日本語 🇯🇵**](README_ja.md) / [**Portugês-BR 🇧🇷**](README_br.md)
