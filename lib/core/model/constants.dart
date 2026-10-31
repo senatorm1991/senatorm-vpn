@@ -9,7 +9,7 @@ abstract class Constants {
   static const githubReleasesApiUrl = "https://api.github.com/repos/senatorm1991/senatorm-vpn/releases";
   static const githubLatestReleaseUrl = "https://github.com/senatorm1991/senatorm-vpn/releases/latest";
   static const appCastUrl = "https://raw.githubusercontent.com/senatorm1991/senatorm-vpn/main/appcast.xml";
-  static const telegramChannelUrl = "https://t.me/hiddify";
+  static const telegramChannelUrl = "https://github.com/senatorm1991/senatorm-vpn/issues";
   static const privacyPolicyUrl = "https://github.com/senatorm1991/senatorm-vpn/blob/main/PRIVACY.md";
   static const termsAndConditionsUrl = "https://hiddify.com/terms/";
   static const cfWarpPrivacyPolicy = "https://www.cloudflare.com/application/privacypolicy/";
