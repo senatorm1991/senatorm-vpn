@@ -58,7 +58,7 @@ abstract class ConfigOptions {
 
   static final remoteDnsAddress = PreferencesNotifier.create<String, String>(
     "remote-dns-address",
-    "tcp://8.8.8.8",
+    "https://dns.cloudflare.com/dns-query",
     possibleValues: List.of([
       "local",
       // "udp://223.5.5.5",
@@ -68,6 +68,11 @@ abstract class ConfigOptions {
       "tcp://1.1.1.1",
       "https://1.1.1.1/dns-query",
       "https://dns.cloudflare.com/dns-query",
+      "https://dns.google/dns-query",
+      "https://dns.quad9.net/dns-query",
+      "https://dns.adguard-dns.com/dns-query",
+      "tls://1.1.1.1",
+      "tls://dns.google",
       "tcp://4.4.2.2",
     ]),
     validator: (value) => value.isNotBlank,
@@ -187,7 +192,7 @@ abstract class ConfigOptions {
 
   static final independentDnsCache = PreferencesNotifier.create<bool, bool>("independent-dns-cache", true);
 
-  static final enableTlsFragment = PreferencesNotifier.create<bool, bool>("enable-tls-fragment", false);
+  static final enableTlsFragment = PreferencesNotifier.create<bool, bool>("enable-tls-fragment", true);
 
   static final fragmentPackets = PreferencesNotifier.create<String, String>(
     "fragment-packets",
