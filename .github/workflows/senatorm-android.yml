@@ -1,0 +1,151 @@
+name: senatorm Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional: publish a GitHub Release with this tag (e.g. v1.0.0). Leave empty to only upload build artifacts."
+        type: string
+        default: ""
+
+env:
+  IS_GITHUB_ACTIONS: 1
+  CHANNEL: "prod"
+  FLUTTER_VERSION: "3.38.5"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [android-apk, android-aab]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          df -h
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2.21.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Cache Gradle
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Setup dependencies
+        run: |
+          make ${{ matrix.platform }}-install-deps
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+
+      - name: Set build number from run number
+        run: |
+          sed -i -E "s/^version: ([0-9]+\.[0-9]+\.[0-9]+)(\+[0-9]+)?.*/version: \1+${{ github.run_number }}/" pubspec.yaml
+          grep -m1 '^version:' pubspec.yaml
+
+      - name: Android signing
+        id: signing
+        env:
+          ANDROID_SIGNING_KEY: ${{ secrets.ANDROID_SIGNING_KEY }}
+          ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
+          ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGNING_KEY_PASSWORD }}
+          ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGNING_KEY_ALIAS }}
+        run: |
+          set -e
+          if [ -n "$ANDROID_SIGNING_KEY" ]; then
+            echo "$ANDROID_SIGNING_KEY" | base64 --decode > android/key.jks
+            {
+              echo "storeFile=$(pwd)/android/key.jks"
+              echo "storePassword=$ANDROID_SIGNING_STORE_PASSWORD"
+              echo "keyPassword=$ANDROID_SIGNING_KEY_PASSWORD"
+              echo "keyAlias=$ANDROID_SIGNING_KEY_ALIAS"
+            } > android/key.properties
+            echo "suffix=" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No ANDROID_SIGNING_KEY secret found. Using a throw-away test key: this build can be installed for testing but MUST NOT be uploaded to Google Play."
+            keytool -genkeypair -keystore android/key.jks -storetype PKCS12 -keyalg RSA -keysize 2048 -validity 10000 \
+              -alias senatorm -storepass senatorm-ci -keypass senatorm-ci -dname "CN=senatorm vpn test"
+            {
+              echo "storeFile=$(pwd)/android/key.jks"
+              echo "storePassword=senatorm-ci"
+              echo "keyPassword=senatorm-ci"
+              echo "keyAlias=senatorm"
+            } > android/key.properties
+            echo "suffix=-TESTKEY" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare
+        run: make ${{ matrix.platform }}-prepare
+
+      - name: Build
+        run: make ${{ matrix.platform }}-release
+
+      - name: Collect outputs
+        run: |
+          mkdir out
+          S="${{ steps.signing.outputs.suffix }}"
+          if [ "${{ matrix.platform }}" = "android-apk" ]; then
+            for abi in arm64-v8a armeabi-v7a x86_64; do
+              f=$(ls build/app/outputs/flutter-apk/*$abi*release*.apk build/app/outputs/flutter-apk/*$abi*.apk 2>/dev/null | head -n1 || true)
+              [ -n "$f" ] && cp "$f" "out/senatorm-vpn-$abi$S.apk" || echo "no $abi apk"
+            done
+            [ -f build/app/outputs/flutter-apk/app-release.apk ] && cp build/app/outputs/flutter-apk/app-release.apk "out/senatorm-vpn-universal$S.apk" || echo "no universal apk"
+          else
+            cp build/app/outputs/bundle/release/app-release.aab "out/senatorm-vpn-play$S.aab"
+          fi
+          ls -la out
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: senatorm-vpn-${{ matrix.platform }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    if: ${{ inputs.release_tag != '' }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.release_tag }}" dist/* \
+            --repo "${{ github.repository }}" \
+            --title "senatorm vpn ${{ inputs.release_tag }}" \
+            --notes "Built by GitHub Actions from this repository. Fork of Hiddify (https://github.com/hiddify/hiddify-app). Files with -TESTKEY in the name were signed with a throw-away key."
